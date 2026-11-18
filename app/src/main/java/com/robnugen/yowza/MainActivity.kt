@@ -50,9 +50,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -76,7 +83,7 @@ class MainActivity : ComponentActivity() {
         val version = packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
         setContent {
             YowzaTheme {
-                HomeScreen(version = version, refreshKey = resumeCount)
+                YowzaApp(version = version, refreshKey = resumeCount)
             }
         }
     }
@@ -113,8 +120,61 @@ private fun readiness(context: Context) = Readiness(
     bypassDnd = Alerts.canBypassDnd(context),
 )
 
+/** Holds the connection state and switches between the home and connection screens. */
 @Composable
-fun HomeScreen(version: String, refreshKey: Int) {
+fun YowzaApp(version: String, refreshKey: Int) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showConnection by remember { mutableStateOf(false) }
+    var connection by remember { mutableStateOf<ConnectionState>(ConnectionState.NoToken) }
+    var connectTick by remember { mutableIntStateOf(0) }
+
+    // (Re)connect on launch, on resume, and after the token changes.
+    LaunchedEffect(refreshKey, connectTick) {
+        val token = TokenStore.load(context)
+        if (token == null) {
+            connection = ConnectionState.NoToken
+            return@LaunchedEffect
+        }
+        if (connection !is ConnectionState.Connected) connection = ConnectionState.Connecting
+        val url = TokenStore.sessionUrl(context)
+        connection = withContext(Dispatchers.IO) { Jmap.fetchSession(url, token) }
+    }
+
+    if (showConnection) {
+        ConnectionScreen(
+            state = connection,
+            onSave = { token, url ->
+                scope.launch {
+                    withContext(Dispatchers.IO) { TokenStore.save(context, token, url) }
+                    connection = ConnectionState.Connecting
+                    connectTick++
+                }
+            },
+            onForget = {
+                TokenStore.forget(context)
+                connection = ConnectionState.NoToken
+                connectTick++
+            },
+            onBack = { showConnection = false },
+        )
+    } else {
+        HomeScreen(
+            version = version,
+            refreshKey = refreshKey,
+            connection = connection,
+            onOpenConnection = { showConnection = true },
+        )
+    }
+}
+
+@Composable
+fun HomeScreen(
+    version: String,
+    refreshKey: Int,
+    connection: ConnectionState,
+    onOpenConnection: () -> Unit,
+) {
     val context = LocalContext.current
     var permissionTick by androidx.compose.runtime.remember { mutableIntStateOf(0) }
     // Re-read on every resume and after the permission dialog closes.
@@ -149,7 +209,11 @@ fun HomeScreen(version: String, refreshKey: Int) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(24.dp))
-            Text(text = "Status: Not connected", style = MaterialTheme.typography.bodyLarge)
+            StatusText(connection)
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = onOpenConnection) {
+                Text(if (connection is ConnectionState.NoToken) "Connect mail" else "Mail connection")
+            }
 
             Spacer(Modifier.height(24.dp))
             Text(
