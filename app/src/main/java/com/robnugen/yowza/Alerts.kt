@@ -129,6 +129,54 @@ object Alerts {
         show(context, sender, subject, id)
     }
 
+    const val LISTEN_CHANNEL_ID = "yowza_listening_v1"
+    private const val REPEATS_CHANNEL_ID = "yowza_repeats_v1"
+    private const val REPEATS_NOTIFICATION_ID = 3_000_000
+    const val LISTEN_NOTIFICATION_ID = 3_000_001
+
+    /** Quiet channels: the persistent "listening" notice and the muted-repeats summary. */
+    fun ensureQuietChannels(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(LISTEN_CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(LISTEN_CHANNEL_ID, "Listening", NotificationManager.IMPORTANCE_MIN).apply {
+                    description = "Shown while Yowza! watches your mail."
+                    setShowBadge(false)
+                },
+            )
+        }
+        if (nm.getNotificationChannel(REPEATS_CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(REPEATS_CHANNEL_ID, "Muted repeats", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Counts of identical alerts muted during their cooldown."
+                    setShowBadge(false)
+                },
+            )
+        }
+    }
+
+    /** No sound, no full screen: one summary of repeats muted during their cooldown. */
+    fun showMutedRepeats(context: Context, muted: List<Cooldown.Entry>) {
+        ensureQuietChannels(context)
+        if (!canPostNotifications(context)) return
+        val lines = muted.joinToString("\n") { "×${it.total}  ${it.label}" }
+        val open = PendingIntent.getActivity(
+            context,
+            REPEATS_NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = Notification.Builder(context, REPEATS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_yowza)
+            .setContentTitle("Repeats muted for ${Cooldown.DEFAULT_WINDOW.toMinutes()} min")
+            .setContentText(lines.lineSequence().first())
+            .setStyle(Notification.BigTextStyle().bigText(lines))
+            .setOnlyAlertOnce(true)
+            .setContentIntent(open)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(REPEATS_NOTIFICATION_ID, n)
+    }
+
     /** A real alert for new mail. Always a fresh notification id, so it goes full screen. */
     fun showNew(context: Context, sender: String, subject: String) {
         val id = REAL_NOTIFICATION_ID_BASE + (System.currentTimeMillis() / 1000 % 100_000).toInt()
@@ -217,6 +265,10 @@ object Alerts {
             .getNotificationChannel(CHANNEL_ID)
             ?.canBypassDnd() == true
     }
+
+    fun ignoresBatteryOptimizations(context: Context): Boolean =
+        context.getSystemService(PowerManager::class.java)
+            .isIgnoringBatteryOptimizations(context.packageName)
 
     fun canScheduleExact(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

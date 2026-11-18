@@ -76,30 +76,112 @@ object WindowStore {
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
 
+/** Persists the repeat [Cooldown]. */
+object CooldownStore {
+    private const val PREFS = "cooldown"
+    private const val ENTRIES = "entries"
+
+    fun load(context: Context): Cooldown {
+        val raw = prefs(context).getString(ENTRIES, null) ?: return Cooldown()
+        return runCatching {
+            val json = JSONObject(raw)
+            val map = mutableMapOf<String, Cooldown.Entry>()
+            json.keys().forEach { k ->
+                val e = json.getJSONObject(k)
+                map[k] = Cooldown.Entry(e.getString("label"), e.getInt("total"), Instant.parse(e.getString("at")))
+            }
+            Cooldown(map)
+        }.getOrElse { Cooldown() }
+    }
+
+    fun save(context: Context, cooldown: Cooldown) {
+        val json = JSONObject()
+        cooldown.entries.forEach { (k, e) ->
+            json.put(k, JSONObject().put("label", e.label).put("total", e.total).put("at", e.lastLoudAt.toString()))
+        }
+        prefs(context).edit().putString(ENTRIES, json.toString()).commit()
+    }
+
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+}
+
+/** Timestamps and state the home screen shows about listening. */
+object ListenStatus {
+    private const val PREFS = "listen_status"
+
+    fun enabled(context: Context) = prefs(context).getBoolean("enabled", false)
+    fun setEnabled(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean("enabled", on).apply()
+    }
+
+    fun markPush(context: Context) = putNow(context, "last_push")
+    fun markQuery(context: Context) = putNow(context, "last_query")
+    fun markConnected(context: Context) {
+        prefs(context).edit().putLong("connected_since", System.currentTimeMillis()).remove("last_error").apply()
+    }
+    fun markDisconnected(context: Context, error: String?) {
+        prefs(context).edit().remove("connected_since").putString("last_error", error).apply()
+    }
+
+    fun lastPush(context: Context) = time(context, "last_push")
+    fun lastQuery(context: Context) = time(context, "last_query")
+    fun connectedSince(context: Context) = time(context, "connected_since")
+    fun lastError(context: Context): String? = prefs(context).getString("last_error", null)
+
+    private fun putNow(context: Context, key: String) {
+        prefs(context).edit().putLong(key, System.currentTimeMillis()).apply()
+    }
+    private fun time(context: Context, key: String): Instant? =
+        prefs(context).getLong(key, 0L).takeIf { it > 0 }?.let { Instant.ofEpochMilli(it) }
+    private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+}
+
 /** Result of one windowed check, for the home screen. */
-data class CheckOutcome(val alerted: List<EmailSummary>, val windowStart: Instant, val error: String?)
+data class CheckOutcome(
+    val alerted: List<EmailSummary>,
+    val windowStart: Instant,
+    val error: String?,
+    val mutedRepeats: Int = 0,
+)
 
 object Checker {
     private val lock = Any()
 
     /**
      * Run all rules over the window, alert on anything new, then record it.
-     * Blocking: call off the main thread.
+     * Identical repeats within the cooldown are muted instead of re-alerting.
+     * Blocking: call off the main thread. Used by Check now and by the listening service.
      */
     fun checkNow(context: Context, session: JmapSession, token: String): CheckOutcome = synchronized(lock) {
         val window = WindowStore.load(context)
         val overlap = WindowStore.overlap(context)
         val start = window.windowStart(overlap)
+        ListenStatus.markQuery(context)
         when (val r = Jmap.queryRules(session, token, Rules.hardcoded, limitPerRule = 25, after = start)) {
             is QueryResult.Failed -> CheckOutcome(emptyList(), start, r.message)
             is QueryResult.Found -> {
                 val decision = window.process(r.emails, overlap)
+                var muted = 0
                 if (decision.toAlert.isNotEmpty()) {
-                    val (sender, subject) = summarizeForAlert(decision.toAlert)
-                    Alerts.showNew(context, sender, subject) // alert first…
+                    val groups = collapseRepeats(decision.toAlert).map { (e, n) ->
+                        Cooldown.Group(Cooldown.keyFor(e), Cooldown.labelFor(e), n)
+                    }
+                    val cd = CooldownStore.load(context).apply(groups, Instant.now(), Cooldown.DEFAULT_WINDOW)
+                    val loud = decision.toAlert.filter { Cooldown.keyFor(it) in cd.loudKeys }
+                    if (loud.isNotEmpty()) {
+                        val (sender, subject) = summarizeForAlert(loud)
+                        Alerts.showNew(context, sender, subject) // alert first…
+                    }
+                    if (cd.muted.isNotEmpty()) {
+                        Alerts.showMutedRepeats(context, cd.muted)
+                        muted = decision.toAlert.size - loud.size
+                    }
+                    CooldownStore.save(context, cd.next)
+                    WindowStore.save(context, decision.nextState) // …then record
+                    return@synchronized CheckOutcome(loud, start, r.ruleErrors.firstOrNull(), muted)
                 }
-                WindowStore.save(context, decision.nextState) // …then record
-                CheckOutcome(decision.toAlert, start, r.ruleErrors.firstOrNull())
+                WindowStore.save(context, decision.nextState)
+                CheckOutcome(emptyList(), start, r.ruleErrors.firstOrNull())
             }
         }
     }

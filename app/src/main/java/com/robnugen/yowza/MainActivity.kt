@@ -110,14 +110,16 @@ private data class Readiness(
     val notifications: Boolean,
     val fullScreen: Boolean,
     val bypassDnd: Boolean,
+    val battery: Boolean,
 ) {
-    val allGood get() = notifications && fullScreen && bypassDnd
+    val allGood get() = notifications && fullScreen && bypassDnd && battery
 }
 
 private fun readiness(context: Context) = Readiness(
     notifications = Alerts.canPostNotifications(context),
     fullScreen = Alerts.canUseFullScreen(context),
     bypassDnd = Alerts.canBypassDnd(context),
+    battery = Alerts.ignoresBatteryOptimizations(context),
 )
 
 /** Holds the connection state and switches between the home and connection screens. */
@@ -216,6 +218,8 @@ fun HomeScreen(
             }
             if (connection is ConnectionState.Connected) {
                 Spacer(Modifier.height(16.dp))
+                ListenSection()
+                Spacer(Modifier.height(16.dp))
                 CheckNowSection(connection.session)
             }
 
@@ -260,6 +264,20 @@ fun HomeScreen(
                         putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                         putExtra(Settings.EXTRA_CHANNEL_ID, Alerts.CHANNEL_ID)
                     },
+                )
+            }
+
+            SetupRow(
+                label = "Unrestricted battery",
+                ok = ready.battery,
+                fixLabel = "Allow",
+            ) {
+                // Lets the push connection survive Doze. Yowza! sleeps on an idle socket.
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:${context.packageName}"),
+                    ),
                 )
             }
 
