@@ -26,6 +26,7 @@ import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 private const val MAIL_CAPABILITY = "urn:ietf:params:jmap:mail"
 
@@ -49,6 +50,10 @@ data class EmailSummary(
     val matchedRules: List<String> = emptyList(),
 ) {
     val sender: String get() = fromName.ifBlank { fromEmail }.ifBlank { "(unknown sender)" }
+
+    /** For alerts: the sender's name, else the rule's name ("Colleague"), else the address. */
+    val displaySender: String
+        get() = fromName.ifBlank { matchedRules.firstOrNull().orEmpty() }.ifBlank { sender }
 }
 
 sealed class QueryResult {
@@ -109,16 +114,29 @@ object Jmap {
         token: String,
         rules: List<Rule>,
         limitPerRule: Int = 10,
+        after: Instant? = null,
     ): QueryResult {
         val calls = JSONArray()
         rules.forEachIndexed { i, rule ->
+            val filter = if (after == null) {
+                rule.filter
+            } else {
+                JSONObject()
+                    .put("operator", "AND")
+                    .put(
+                        "conditions",
+                        JSONArray()
+                            .put(rule.filter)
+                            .put(JSONObject().put("after", after.truncatedTo(ChronoUnit.SECONDS).toString())),
+                    )
+            }
             calls.put(
                 JSONArray()
                     .put("Email/query")
                     .put(
                         JSONObject()
                             .put("accountId", session.accountId)
-                            .put("filter", rule.filter)
+                            .put("filter", filter)
                             .put(
                                 "sort",
                                 JSONArray().put(

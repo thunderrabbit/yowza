@@ -44,8 +44,8 @@ jobs:
             echo "::warning::YOWZA_SIGNING secret not set: building with the debug key and skipping the GitHub release."
           fi
 
-      - name: Build release APK
-        run: ./gradlew --no-daemon assembleRelease
+      - name: Run unit tests and build release APK
+        run: ./gradlew --no-daemon testReleaseUnitTest assembleRelease
 
       - name: Name the APK
         run: |

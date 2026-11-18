@@ -43,6 +43,7 @@ object Alerts {
     const val EXTRA_NOTIFICATION_ID = "notification_id"
 
     private const val TEST_NOTIFICATION_ID_BASE = 1_000_000
+    private const val REAL_NOTIFICATION_ID_BASE = 2_000_000
     private const val TEST_SENDER = "Test Sender"
     private const val TEST_SUBJECT = "Test subject"
     private val VIBRATION = longArrayOf(0, 600, 300, 600, 300, 600)
@@ -122,9 +123,15 @@ object Alerts {
     ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.activeNotifications
-            .filter { it.id >= TEST_NOTIFICATION_ID_BASE }
+            .filter { it.id in TEST_NOTIFICATION_ID_BASE until REAL_NOTIFICATION_ID_BASE }
             .forEach { nm.cancel(it.id) }
         val id = TEST_NOTIFICATION_ID_BASE + (System.currentTimeMillis() / 1000 % 100_000).toInt()
+        show(context, sender, subject, id)
+    }
+
+    /** A real alert for new mail. Always a fresh notification id, so it goes full screen. */
+    fun showNew(context: Context, sender: String, subject: String) {
+        val id = REAL_NOTIFICATION_ID_BASE + (System.currentTimeMillis() / 1000 % 100_000).toInt()
         show(context, sender, subject, id)
     }
 
