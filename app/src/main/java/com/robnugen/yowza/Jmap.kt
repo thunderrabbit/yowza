@@ -180,7 +180,8 @@ object Jmap {
         }
     }
 
-    private fun parseEmails(body: String): QueryResult = try {
+    private fun parseEmails(body: String): QueryResult {
+      return try {
         val responses = JSONObject(body).getJSONArray("methodResponses")
         var list: JSONArray? = null
         for (i in 0 until responses.length()) {
@@ -211,8 +212,9 @@ object Jmap {
             }
         }
         QueryResult.Found(emails)
-    } catch (e: JSONException) {
+      } catch (e: JSONException) {
         QueryResult.Failed("Couldn't read the server's answer.")
+      }
     }
 
     private fun parseSession(body: String): ConnectionState = try {
