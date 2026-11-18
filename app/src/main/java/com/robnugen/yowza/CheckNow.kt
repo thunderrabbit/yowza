@@ -42,12 +42,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Step 4 of the build plan: one hardcoded rule, run by hand. Rules become editable in step 7. */
-private const val HARDCODED_FROM = "client@example.com"
+/** Steps 4–4.5: hardcoded rules, run by hand. Rules become editable in step 7. */
 private const val ALERT_DELAY_SECONDS = 10
 
 private val timeFormat = DateTimeFormatter.ofPattern("EEE d MMM, HH:mm")
@@ -69,7 +67,7 @@ fun CheckNowSection(session: JmapSession) {
                         if (token == null) {
                             QueryResult.Failed("No token saved.")
                         } else {
-                            Jmap.queryEmails(session, token, JSONObject().put("from", HARDCODED_FROM))
+                            Jmap.queryRules(session, token, Rules.hardcoded)
                         }
                     }
                     busy = false
@@ -81,10 +79,16 @@ fun CheckNowSection(session: JmapSession) {
             Text(if (busy) "Checking…" else "Check now")
         }
         Text(
-            "Rule (fixed for now): from $HARDCODED_FROM",
+            "Rules (fixed for now; editable in a later version):",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp),
         )
+        Rules.hardcoded.forEach { rule ->
+            Text(
+                "• ${rule.name}: ${rule.description}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
 
         when (val r = result) {
             null -> Unit
@@ -95,6 +99,9 @@ fun CheckNowSection(session: JmapSession) {
             )
             is QueryResult.Found -> {
                 Spacer(Modifier.height(8.dp))
+                r.ruleErrors.forEach {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
                 Text(
                     if (r.emails.isEmpty()) "No matching mail." else
                         "${r.emails.size} matching emails. Tap one to alert it in $ALERT_DELAY_SECONDS s, then lock your phone.",
@@ -137,11 +144,12 @@ private fun EmailRow(email: EmailSummary, onClick: () -> Unit) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        email.receivedAt?.let {
-            Text(
-                timeFormat.format(it.atZone(ZoneId.systemDefault())),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
+        val time = email.receivedAt?.let { timeFormat.format(it.atZone(ZoneId.systemDefault())) }
+        Text(
+            listOfNotNull(time, email.matchedRules.joinToString(" · ").ifEmpty { null })
+                .joinToString("  ·  "),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }

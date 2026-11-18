@@ -46,12 +46,17 @@ data class EmailSummary(
     val fromEmail: String,
     val subject: String,
     val receivedAt: Instant?,
+    val matchedRules: List<String> = emptyList(),
 ) {
     val sender: String get() = fromName.ifBlank { fromEmail }.ifBlank { "(unknown sender)" }
 }
 
 sealed class QueryResult {
-    data class Found(val emails: List<EmailSummary>) : QueryResult()
+    /** [ruleErrors]: rules the server rejected while others still returned results. */
+    data class Found(
+        val emails: List<EmailSummary>,
+        val ruleErrors: List<String> = emptyList(),
+    ) : QueryResult()
     data class Failed(val message: String) : QueryResult()
 }
 
@@ -94,61 +99,57 @@ object Jmap {
     }
 
     /**
-     * One JMAP request: Email/query with [filter] (newest first, up to [limit]), then
-     * Email/get on those ids via a back-reference, fetching only from/subject/receivedAt.
-     * Blocking: call off the main thread.
+     * One JMAP request covering every rule: for rule i, Email/query "q<i>" (newest first,
+     * up to [limitPerRule]) then Email/get "g<i>" on those ids via a back-reference,
+     * fetching only from/subject/receivedAt. Results are merged, each email tagged with
+     * the rules it matched. Blocking: call off the main thread.
      */
-    fun queryEmails(
+    fun queryRules(
         session: JmapSession,
         token: String,
-        filter: JSONObject,
-        limit: Int = 20,
+        rules: List<Rule>,
+        limitPerRule: Int = 10,
     ): QueryResult {
+        val calls = JSONArray()
+        rules.forEachIndexed { i, rule ->
+            calls.put(
+                JSONArray()
+                    .put("Email/query")
+                    .put(
+                        JSONObject()
+                            .put("accountId", session.accountId)
+                            .put("filter", rule.filter)
+                            .put(
+                                "sort",
+                                JSONArray().put(
+                                    JSONObject().put("property", "receivedAt").put("isAscending", false),
+                                ),
+                            )
+                            .put("limit", limitPerRule),
+                    )
+                    .put("q$i"),
+            )
+            calls.put(
+                JSONArray()
+                    .put("Email/get")
+                    .put(
+                        JSONObject()
+                            .put("accountId", session.accountId)
+                            .put(
+                                "#ids",
+                                JSONObject()
+                                    .put("resultOf", "q$i")
+                                    .put("name", "Email/query")
+                                    .put("path", "/ids"),
+                            )
+                            .put("properties", JSONArray().put("from").put("subject").put("receivedAt")),
+                    )
+                    .put("g$i"),
+            )
+        }
         val request = JSONObject()
             .put("using", JSONArray().put("urn:ietf:params:jmap:core").put(MAIL_CAPABILITY))
-            .put(
-                "methodCalls",
-                JSONArray()
-                    .put(
-                        JSONArray()
-                            .put("Email/query")
-                            .put(
-                                JSONObject()
-                                    .put("accountId", session.accountId)
-                                    .put("filter", filter)
-                                    .put(
-                                        "sort",
-                                        JSONArray().put(
-                                            JSONObject()
-                                                .put("property", "receivedAt")
-                                                .put("isAscending", false),
-                                        ),
-                                    )
-                                    .put("limit", limit),
-                            )
-                            .put("q"),
-                    )
-                    .put(
-                        JSONArray()
-                            .put("Email/get")
-                            .put(
-                                JSONObject()
-                                    .put("accountId", session.accountId)
-                                    .put(
-                                        "#ids",
-                                        JSONObject()
-                                            .put("resultOf", "q")
-                                            .put("name", "Email/query")
-                                            .put("path", "/ids"),
-                                    )
-                                    .put(
-                                        "properties",
-                                        JSONArray().put("from").put("subject").put("receivedAt"),
-                                    ),
-                            )
-                            .put("g"),
-                    ),
-            )
+            .put("methodCalls", calls)
 
         val conn = try {
             URL(session.apiUrl).openConnection() as HttpURLConnection
@@ -165,7 +166,7 @@ object Jmap {
             conn.setRequestProperty("Accept", "application/json")
             conn.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
             when (val code = conn.responseCode) {
-                200 -> parseEmails(conn.inputStream.bufferedReader().use { it.readText() })
+                200 -> parseRuleResults(conn.inputStream.bufferedReader().use { it.readText() }, rules)
                 401 -> QueryResult.Failed("Token rejected (401): it's wrong, expired or revoked.")
                 else -> QueryResult.Failed("Server answered HTTP $code.")
             }
@@ -180,41 +181,58 @@ object Jmap {
         }
     }
 
-    private fun parseEmails(body: String): QueryResult {
-      return try {
-        val responses = JSONObject(body).getJSONArray("methodResponses")
-        var list: JSONArray? = null
-        for (i in 0 until responses.length()) {
-            val r = responses.getJSONArray(i)
-            when (r.getString(0)) {
-                "error" -> {
-                    val err = r.getJSONObject(1)
-                    return QueryResult.Failed(
-                        "Server error: ${err.optString("type")} ${err.optString("description")}".trim(),
-                    )
+    private fun parseRuleResults(body: String, rules: List<Rule>): QueryResult {
+        return try {
+            val responses = JSONObject(body).getJSONArray("methodResponses")
+            val byId = LinkedHashMap<String, EmailSummary>()
+            val errors = mutableListOf<String>()
+            for (i in 0 until responses.length()) {
+                val r = responses.getJSONArray(i)
+                val callId = r.getString(2)
+                val ruleName = callId.drop(1).toIntOrNull()?.let { rules.getOrNull(it)?.name } ?: "?"
+                when (r.getString(0)) {
+                    "error" -> {
+                        val err = r.getJSONObject(1)
+                        // A failed query also makes its back-referenced get fail; report once.
+                        if (callId.startsWith("q")) {
+                            errors += "$ruleName: ${err.optString("type")} ${err.optString("description")}".trim()
+                        }
+                    }
+                    "Email/get" -> {
+                        val list = r.getJSONObject(1).getJSONArray("list")
+                        for (j in 0 until list.length()) {
+                            val email = parseEmail(list.getJSONObject(j))
+                            val existing = byId[email.id]
+                            byId[email.id] = (existing ?: email).copy(
+                                matchedRules = (existing?.matchedRules ?: emptyList()) + ruleName,
+                            )
+                        }
+                    }
                 }
-                "Email/get" -> list = r.getJSONObject(1).getJSONArray("list")
             }
-        }
-        val emails = mutableListOf<EmailSummary>()
-        list?.let {
-            for (i in 0 until it.length()) {
-                val e = it.getJSONObject(i)
-                val from = e.optJSONArray("from")?.optJSONObject(0)
-                emails += EmailSummary(
-                    id = e.getString("id"),
-                    fromName = from?.optString("name").orEmpty().let { n -> if (n == "null") "" else n },
-                    fromEmail = from?.optString("email").orEmpty(),
-                    subject = e.optString("subject").let { s -> if (s == "null") "(no subject)" else s },
-                    receivedAt = e.optString("receivedAt").takeIf { s -> s.isNotEmpty() }
-                        ?.let { s -> runCatching { Instant.parse(s) }.getOrNull() },
+            if (byId.isEmpty() && errors.isNotEmpty()) {
+                QueryResult.Failed("Server error — " + errors.joinToString("; "))
+            } else {
+                QueryResult.Found(
+                    byId.values.sortedByDescending { it.receivedAt ?: Instant.EPOCH },
+                    errors,
                 )
             }
+        } catch (e: JSONException) {
+            QueryResult.Failed("Couldn't read the server's answer.")
         }
-        QueryResult.Found(emails)
-      } catch (e: JSONException) {
-        QueryResult.Failed("Couldn't read the server's answer.")
-      }
+    }
+
+    private fun parseEmail(e: JSONObject): EmailSummary {
+        val from = e.optJSONArray("from")?.optJSONObject(0)
+        return EmailSummary(
+            id = e.getString("id"),
+            fromName = from?.optString("name").orEmpty().let { n -> if (n == "null") "" else n },
+            fromEmail = from?.optString("email").orEmpty(),
+            subject = e.optString("subject").let { s -> if (s == "null" || s.isEmpty()) "(no subject)" else s },
+            receivedAt = e.optString("receivedAt").takeIf { s -> s.isNotEmpty() }
+                ?.let { s -> runCatching { Instant.parse(s) }.getOrNull() },
+        )
     }
 
     private fun parseSession(body: String): ConnectionState = try {
