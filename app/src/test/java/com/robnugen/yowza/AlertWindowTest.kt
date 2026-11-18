@@ -78,4 +78,14 @@ class AlertWindowTest {
         assertEquals("3 new emails", sender)
         assertEquals("Colleague: Lunch?\n×2 examplesite: PHP ERROR", subject)
     }
+
+    @Test fun collapseRepeatsKeepsNewestAndCounts() {
+        val list = listOf(
+            email("new", 9, "anddev", "PHP ERROR in Database.php"),
+            email("t", 8, "Colleague", "Lunch?"),
+            email("old", 1, "anddev", "PHP ERROR in Database.php"),
+        )
+        val groups = collapseRepeats(list)
+        assertEquals(listOf("new" to 2, "t" to 1), groups.map { it.first.id to it.second })
+    }
 }

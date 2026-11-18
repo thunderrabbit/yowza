@@ -73,9 +73,7 @@ data class AlertWindow(
  * into one line with a count.
  */
 fun summarizeForAlert(emails: List<EmailSummary>): Pair<String, String> {
-    val groups = emails
-        .groupBy { it.displaySender to it.subject }
-        .map { (key, list) -> Triple(key.first, key.second, list.size) }
+    val groups = collapseRepeats(emails).map { (e, count) -> Triple(e.displaySender, e.subject, count) }
     if (groups.size == 1) {
         val (sender, subject, count) = groups[0]
         return sender to if (count > 1) "×$count  $subject" else subject
@@ -86,3 +84,11 @@ fun summarizeForAlert(emails: List<EmailSummary>): Pair<String, String> {
     val more = if (groups.size > 5) "\n…and ${groups.size - 5} more" else ""
     return "${emails.size} new emails" to lines + more
 }
+
+/**
+ * Group identical repeats (same displayed sender and subject), keeping first-seen order.
+ * Each group is represented by its first email (the newest, when the list is newest-first)
+ * and how many emails it stands for.
+ */
+fun collapseRepeats(emails: List<EmailSummary>): List<Pair<EmailSummary, Int>> =
+    emails.groupBy { it.displaySender to it.subject }.values.map { it.first() to it.size }

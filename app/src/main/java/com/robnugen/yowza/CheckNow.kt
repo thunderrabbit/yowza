@@ -162,15 +162,19 @@ fun CheckNowSection(session: JmapSession) {
                 r.ruleErrors.forEach {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
+                val groups = collapseRepeats(r.emails)
                 Text(
                     if (r.emails.isEmpty()) "No matching mail." else
-                        "${r.emails.size} matching emails. Tap one to test its alert in $ALERT_DELAY_SECONDS s, then lock your phone.",
+                        "${r.emails.size} matching emails" +
+                            (if (groups.size < r.emails.size) " (${groups.size} different)" else "") +
+                            ". Tap one to test its alert in $ALERT_DELAY_SECONDS s, then lock your phone.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                r.emails.forEach { email ->
+                groups.forEach { (email, count) ->
                     HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                    EmailRow(email) {
-                        Alerts.scheduleTest(context, ALERT_DELAY_SECONDS, email.displaySender, email.subject)
+                    EmailRow(email, count) {
+                        val subject = if (count > 1) "×$count  ${email.subject}" else email.subject
+                        Alerts.scheduleTest(context, ALERT_DELAY_SECONDS, email.displaySender, subject)
                         Toast.makeText(
                             context,
                             "Alert in $ALERT_DELAY_SECONDS seconds. Lock your phone! 😱",
@@ -184,7 +188,7 @@ fun CheckNowSection(session: JmapSession) {
 }
 
 @Composable
-private fun EmailRow(email: EmailSummary, onClick: () -> Unit) {
+private fun EmailRow(email: EmailSummary, count: Int, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -192,7 +196,7 @@ private fun EmailRow(email: EmailSummary, onClick: () -> Unit) {
             .padding(vertical = 4.dp),
     ) {
         Text(
-            email.sender,
+            (if (count > 1) "×$count  " else "") + email.displaySender,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -204,7 +208,9 @@ private fun EmailRow(email: EmailSummary, onClick: () -> Unit) {
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        val time = email.receivedAt?.let { timeFormat.format(it.atZone(ZoneId.systemDefault())) }
+        val time = email.receivedAt?.let {
+            (if (count > 1) "latest " else "") + timeFormat.format(it.atZone(ZoneId.systemDefault()))
+        }
         Text(
             listOfNotNull(time, email.matchedRules.joinToString(" · ").ifEmpty { null })
                 .joinToString("  ·  "),
