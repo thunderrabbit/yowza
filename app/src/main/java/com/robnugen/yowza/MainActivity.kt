@@ -226,6 +226,15 @@ fun HomeScreen(version: String, refreshKey: Int) {
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            val lastTest = androidx.compose.runtime.remember(refreshKey) { Alerts.lastTestSummary(context) }
+            if (lastTest != null) {
+                Text(
+                    text = lastTest,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
 
             Spacer(Modifier.height(32.dp))
             Text(text = "v$version", style = MaterialTheme.typography.bodySmall)

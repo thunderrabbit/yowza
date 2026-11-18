@@ -19,6 +19,7 @@ package com.robnugen.yowza
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -30,6 +31,7 @@ import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.os.PowerManager
 import android.os.SystemClock
 
 /** Everything about posting a big, loud Yowza! alert. */
@@ -40,7 +42,7 @@ object Alerts {
     const val EXTRA_SUBJECT = "subject"
     const val EXTRA_NOTIFICATION_ID = "notification_id"
 
-    private const val TEST_NOTIFICATION_ID = 1001
+    private const val TEST_NOTIFICATION_ID_BASE = 1_000_000
     private val VIBRATION = longArrayOf(0, 600, 300, 600, 300, 600)
 
     fun ensureChannel(context: Context) {
@@ -106,8 +108,18 @@ object Alerts {
         context.getSystemService(NotificationManager::class.java).cancel(notificationId)
     }
 
+    /**
+     * Android only launches the full-screen activity for a *newly posted* notification;
+     * re-posting an id that's still showing counts as an update. So every alert gets a
+     * fresh id, and any older test alert still in the shade is cleared first.
+     */
     fun showTest(context: Context) {
-        show(context, "Test Sender", "Test subject", TEST_NOTIFICATION_ID)
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.activeNotifications
+            .filter { it.id >= TEST_NOTIFICATION_ID_BASE }
+            .forEach { nm.cancel(it.id) }
+        val id = TEST_NOTIFICATION_ID_BASE + (System.currentTimeMillis() / 1000 % 100_000).toInt()
+        show(context, "Test Sender", "Test subject", id)
     }
 
     /**
@@ -128,6 +140,38 @@ object Alerts {
         } else {
             am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
         }
+    }
+
+    // --- Diagnostics for the delayed test ---
+
+    private const val PREFS = "diagnostics"
+
+    /** Remember when the delayed test fired and whether the screen was on at that moment. */
+    fun recordTestFired(context: Context) {
+        val power = context.getSystemService(PowerManager::class.java)
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putLong("test_fired_at", System.currentTimeMillis())
+            .putBoolean("test_screen_on", power.isInteractive)
+            .putBoolean("test_locked", keyguard.isKeyguardLocked)
+            .apply()
+    }
+
+    /** Human-readable summary of the last delayed test, or null if none yet. */
+    fun lastTestSummary(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val at = prefs.getLong("test_fired_at", 0L)
+        if (at == 0L) return null
+        val time = java.text.DateFormat.getTimeInstance(java.text.DateFormat.MEDIUM)
+            .format(java.util.Date(at))
+        val screenOn = prefs.getBoolean("test_screen_on", true)
+        val locked = prefs.getBoolean("test_locked", false)
+        val expect = if (screenOn) {
+            "screen was on → banner expected"
+        } else {
+            "screen was off → full screen expected"
+        }
+        return "Last delayed test fired at $time (${if (locked) "locked" else "unlocked"}, $expect)"
     }
 
     // --- Permission / settings state, shown on the home screen ---
@@ -164,6 +208,7 @@ object Alerts {
 
 class TestAlertReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        Alerts.recordTestFired(context)
         Alerts.showTest(context)
     }
 }
