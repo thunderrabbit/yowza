@@ -48,8 +48,8 @@ object Rules {
         ),
         Rule(
             name = "Teammate",
-            description = "from contains \"teammate\" (broad: no current address on file)",
-            filter = cond("from", "teammate"),
+            description = "from teammate@example.com",
+            filter = cond("from", "teammate@example.com"),
         ),
         Rule(
             name = "ExampleCo",
