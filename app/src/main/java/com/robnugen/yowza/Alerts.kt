@@ -43,6 +43,8 @@ object Alerts {
     const val EXTRA_NOTIFICATION_ID = "notification_id"
 
     private const val TEST_NOTIFICATION_ID_BASE = 1_000_000
+    private const val TEST_SENDER = "Test Sender"
+    private const val TEST_SUBJECT = "Test subject"
     private val VIBRATION = longArrayOf(0, 600, 300, 600, 300, 600)
 
     fun ensureChannel(context: Context) {
@@ -113,25 +115,36 @@ object Alerts {
      * re-posting an id that's still showing counts as an update. So every alert gets a
      * fresh id, and any older test alert still in the shade is cleared first.
      */
-    fun showTest(context: Context) {
+    fun showTest(
+        context: Context,
+        sender: String = TEST_SENDER,
+        subject: String = TEST_SUBJECT,
+    ) {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.activeNotifications
             .filter { it.id >= TEST_NOTIFICATION_ID_BASE }
             .forEach { nm.cancel(it.id) }
         val id = TEST_NOTIFICATION_ID_BASE + (System.currentTimeMillis() / 1000 % 100_000).toInt()
-        show(context, "Test Sender", "Test subject", id)
+        show(context, sender, subject, id)
     }
 
     /**
      * Fire a test alert after [delaySeconds], so there is time to lock the phone.
      * Uses an exact alarm so it still fires while the phone is idle.
      */
-    fun scheduleTest(context: Context, delaySeconds: Int) {
+    fun scheduleTest(
+        context: Context,
+        delaySeconds: Int,
+        sender: String = TEST_SENDER,
+        subject: String = TEST_SUBJECT,
+    ) {
         val am = context.getSystemService(AlarmManager::class.java)
         val pending = PendingIntent.getBroadcast(
             context,
             0,
-            Intent(context, TestAlertReceiver::class.java),
+            Intent(context, TestAlertReceiver::class.java)
+                .putExtra(EXTRA_SENDER, sender)
+                .putExtra(EXTRA_SUBJECT, subject),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val at = SystemClock.elapsedRealtime() + delaySeconds * 1000L
@@ -209,6 +222,10 @@ object Alerts {
 class TestAlertReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Alerts.recordTestFired(context)
-        Alerts.showTest(context)
+        Alerts.showTest(
+            context,
+            sender = intent.getStringExtra(Alerts.EXTRA_SENDER) ?: "Test Sender",
+            subject = intent.getStringExtra(Alerts.EXTRA_SUBJECT) ?: "Test subject",
+        )
     }
 }

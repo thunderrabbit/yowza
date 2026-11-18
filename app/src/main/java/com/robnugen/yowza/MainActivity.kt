@@ -214,6 +214,10 @@ fun HomeScreen(
             OutlinedButton(onClick = onOpenConnection) {
                 Text(if (connection is ConnectionState.NoToken) "Connect mail" else "Mail connection")
             }
+            if (connection is ConnectionState.Connected) {
+                Spacer(Modifier.height(16.dp))
+                CheckNowSection(connection.session)
+            }
 
             Spacer(Modifier.height(24.dp))
             Text(
