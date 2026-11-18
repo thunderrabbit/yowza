@@ -139,7 +139,10 @@ fun RulesScreen(onBack: () -> Unit) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(rule.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                        Text(rule.describe(), style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            rule.describe() + if (!rule.wakeDuringQuiet) "  · waits for quiet hours to end" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     Switch(
                         checked = rule.enabled,
@@ -156,6 +159,9 @@ fun RulesScreen(onBack: () -> Unit) {
                 onClick = { editing = StoredRule(name = "", conditions = listOf(Condition(Field.FROM, ""))) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Add rule") }
+
+            Spacer(Modifier.height(32.dp))
+            QuietHoursSection()
 
             Spacer(Modifier.height(32.dp))
             Text("Backup", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -230,6 +236,7 @@ private fun RuleEditor(
 ) {
     var name by remember { mutableStateOf(initial.name) }
     var matchAll by remember { mutableStateOf(initial.matchAll) }
+    var wakes by remember { mutableStateOf(initial.wakeDuringQuiet) }
     val conditions = remember { mutableStateListOf<Condition>().apply { addAll(initial.conditions) } }
     val isNew = initial.name.isBlank()
     BackHandler(onBack = onCancel)
@@ -276,8 +283,18 @@ private fun RuleEditor(
                     "e.g. From contains \"example.org\".",
                 style = MaterialTheme.typography.bodySmall,
             )
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Can wake me during quiet hours", modifier = Modifier.weight(1f))
+                Switch(checked = wakes, onCheckedChange = { wakes = it })
+            }
             Spacer(Modifier.height(16.dp))
-            val draft = initial.copy(name = name.trim(), matchAll = matchAll, conditions = conditions.toList())
+            val draft = initial.copy(
+                name = name.trim(),
+                matchAll = matchAll,
+                conditions = conditions.toList(),
+                wakeDuringQuiet = wakes,
+            )
             Button(
                 onClick = { onSave(draft) },
                 enabled = draft.name.isNotEmpty() && draft.usable.isNotEmpty(),
@@ -326,5 +343,38 @@ private fun ConditionRow(condition: Condition, onChange: (Condition) -> Unit, on
                 .padding(start = 8.dp),
         )
         if (onRemove != null) TextButton(onClick = onRemove) { Text("✕") }
+    }
+}
+
+@Composable
+private fun QuietHoursSection() {
+    val context = LocalContext.current
+    var q by remember { mutableStateOf(QuietStore.load(context)) }
+    fun update(n: QuietHours) {
+        q = n
+        QuietStore.save(context, n)
+    }
+    Text("Quiet hours", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "During quiet hours, rules that can't wake you hold their alerts until the end.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(checked = q.enabled, onCheckedChange = { update(q.copy(enabled = it)) })
+    }
+    if (q.enabled) {
+        TimeStepper("From", q.start) { update(q.copy(start = it)) }
+        TimeStepper("Until", q.end) { update(q.copy(end = it)) }
+        Text("Uses this phone's local time.", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun TimeStepper(label: String, time: java.time.LocalTime, onChange: (java.time.LocalTime) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("$label $time", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        TextButton(onClick = { onChange(time.minusMinutes(30)) }) { Text("−30 min") }
+        TextButton(onClick = { onChange(time.plusMinutes(30)) }) { Text("+30 min") }
     }
 }

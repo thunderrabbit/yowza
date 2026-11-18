@@ -142,6 +142,7 @@ data class CheckOutcome(
     val windowStart: Instant,
     val error: String?,
     val mutedRepeats: Int = 0,
+    val held: Int = 0,
 )
 
 object Checker {
@@ -157,17 +158,36 @@ object Checker {
         val overlap = WindowStore.overlap(context)
         val start = window.windowStart(overlap)
         ListenStatus.markQuery(context)
-        when (val r = Jmap.queryRules(session, token, RuleStore.queryRules(context), limitPerRule = 25, after = start)) {
-            is QueryResult.Failed -> CheckOutcome(emptyList(), start, r.message)
+        val stored = RuleStore.load(context)
+        when (val r = Jmap.queryRules(session, token, RuleJson.toQueryRules(stored), limitPerRule = 25, after = start)) {
+            is QueryResult.Failed -> {
+                AppLog.error(context, "Check failed: ${r.message}")
+                CheckOutcome(emptyList(), start, r.message)
+            }
             is QueryResult.Found -> {
+                r.ruleErrors.forEach { AppLog.error(context, "Rule error: $it") }
                 val decision = window.process(r.emails, overlap)
+                if (decision.toAlert.isEmpty()) {
+                    WindowStore.save(context, decision.nextState)
+                    AppLog.info(context, "Check: ${r.emails.size} in window, nothing new")
+                    return@synchronized CheckOutcome(emptyList(), start, r.ruleErrors.firstOrNull())
+                }
+
+                // Quiet hours: hold mail whose rules may not wake you.
+                val quiet = QuietStore.load(context)
+                val wakers = stored.filter { it.wakeDuringQuiet }.map { it.name }.toSet()
+                val nowLocal = java.time.LocalTime.now()
+                val (now, later) = decision.toAlert.partition { shouldAlertNow(it.matchedRules, wakers, quiet, nowLocal) }
+                if (later.isNotEmpty()) HeldAlerts.hold(context, later)
+
+                var loud = emptyList<EmailSummary>()
                 var muted = 0
-                if (decision.toAlert.isNotEmpty()) {
-                    val groups = collapseRepeats(decision.toAlert).map { (e, n) ->
+                if (now.isNotEmpty()) {
+                    val groups = collapseRepeats(now).map { (e, n) ->
                         Cooldown.Group(Cooldown.keyFor(e), Cooldown.labelFor(e), n)
                     }
                     val cd = CooldownStore.load(context).apply(groups, Instant.now(), Cooldown.DEFAULT_WINDOW)
-                    val loud = decision.toAlert.filter { Cooldown.keyFor(it) in cd.loudKeys }
+                    loud = now.filter { Cooldown.keyFor(it) in cd.loudKeys }
                     if (loud.isNotEmpty()) {
                         val (sender, subject) = summarizeForAlert(loud)
                         val ruleNames = loud.flatMap { it.matchedRules }.distinct()
@@ -175,14 +195,19 @@ object Checker {
                     }
                     if (cd.muted.isNotEmpty()) {
                         Alerts.showMutedRepeats(context, cd.muted)
-                        muted = decision.toAlert.size - loud.size
+                        muted = now.size - loud.size
                     }
                     CooldownStore.save(context, cd.next)
-                    WindowStore.save(context, decision.nextState) // …then record
-                    return@synchronized CheckOutcome(loud, start, r.ruleErrors.firstOrNull(), muted)
                 }
-                WindowStore.save(context, decision.nextState)
-                CheckOutcome(emptyList(), start, r.ruleErrors.firstOrNull())
+                WindowStore.save(context, decision.nextState) // …then record
+                AppLog.info(
+                    context,
+                    "Check: ${decision.toAlert.size} new → ${loud.size} alerted" +
+                        (if (muted > 0) ", $muted muted repeats" else "") +
+                        (if (later.isNotEmpty()) ", ${later.size} held for quiet hours" else "") +
+                        " (rules: ${decision.toAlert.flatMap { it.matchedRules }.distinct().joinToString()})",
+                )
+                CheckOutcome(loud, start, r.ruleErrors.firstOrNull(), muted, later.size)
             }
         }
     }

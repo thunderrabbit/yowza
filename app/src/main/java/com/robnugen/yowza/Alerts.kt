@@ -165,6 +165,67 @@ object Alerts {
         }
     }
 
+    private const val PROBLEMS_CHANNEL_ID = "yowza_problems_v1"
+    private const val PROBLEM_NOTIFICATION_ID = 3_000_003
+    private const val HELD_NOTIFICATION_ID = 3_000_004
+
+    /** A normal (not full-screen) notification when Yowza! can't do its job. */
+    fun showProblem(context: Context, title: String, text: String) {
+        if (!canPostNotifications(context)) return
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (nm.getNotificationChannel(PROBLEMS_CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(PROBLEMS_CHANNEL_ID, "Problems", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "When Yowza! can't reach your mail and might miss an alert."
+                },
+            )
+        }
+        val open = PendingIntent.getActivity(
+            context,
+            PROBLEM_NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = Notification.Builder(context, PROBLEMS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_yowza)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setOnlyAlertOnce(true)
+            .setContentIntent(open)
+            .build()
+        nm.notify(PROBLEM_NOTIFICATION_ID, n)
+    }
+
+    fun clearProblem(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(PROBLEM_NOTIFICATION_ID)
+    }
+
+    /** Silent notice that alerts are being held until quiet hours end. */
+    fun showHeldNotice(context: Context, count: Int, until: java.time.LocalTime) {
+        ensureQuietChannels(context)
+        if (!canPostNotifications(context)) return
+        val n = Notification.Builder(context, REPEATS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_yowza)
+            .setContentTitle("$count alert${if (count == 1) "" else "s"} held for quiet hours")
+            .setContentText("They'll go off at $until.")
+            .setOnlyAlertOnce(true)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    context,
+                    HELD_NOTIFICATION_ID,
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(HELD_NOTIFICATION_ID, n)
+    }
+
+    fun clearHeldNotice(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(HELD_NOTIFICATION_ID)
+    }
+
     /** No sound, no full screen: one summary of repeats muted during their cooldown. */
     fun showMutedRepeats(context: Context, muted: List<Cooldown.Entry>) {
         ensureQuietChannels(context)

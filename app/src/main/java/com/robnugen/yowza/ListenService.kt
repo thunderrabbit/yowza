@@ -54,6 +54,28 @@ class ListenService : Service() {
     private var debounce: Job? = null
     @Volatile private var connection: HttpURLConnection? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var disconnectedSince = 0L
+    private var problemShown = false
+
+    /**
+     * Failures must be visible, not silent: a rejected token is reported at once; other
+     * outages once they've lasted [LONG_OUTAGE_MS]. A normal notification, not full screen.
+     */
+    private fun reportProblemIfNeeded(error: String?) {
+        if (problemShown) return
+        val tokenRejected = error?.contains("401") == true || error?.contains("Token") == true
+        val outageMs = System.currentTimeMillis() - disconnectedSince
+        if (tokenRejected || outageMs > LONG_OUTAGE_MS) {
+            Alerts.showProblem(
+                this,
+                if (tokenRejected) "Yowza! can't log in to your mail" else "Yowza! can't reach your mail",
+                (error ?: "Disconnected") + if (tokenRejected) ". Paste a new token in Mail connection." else
+                    ". Alerts may be missed until it reconnects.",
+            )
+            AppLog.error(this, "Problem notification shown")
+            problemShown = true
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -101,6 +123,7 @@ class ListenService : Service() {
 
     private suspend fun runLoop() {
         var backoffSeconds = 2L
+        AppLog.info(this, "Listening started")
         while (scope.isActive && ListenStatus.enabled(this)) {
             val startedAt = System.currentTimeMillis()
             val error = try {
@@ -110,6 +133,9 @@ class ListenService : Service() {
                 e.message ?: e.javaClass.simpleName
             }
             ListenStatus.markDisconnected(this, error)
+            if (disconnectedSince == 0L) disconnectedSince = System.currentTimeMillis()
+            AppLog.error(this, "Disconnected: ${error ?: "unknown"}")
+            reportProblemIfNeeded(error)
             updateNotification("Reconnecting… ${error ?: ""}".trim())
             // A connection that stayed up a while resets the backoff.
             if (System.currentTimeMillis() - startedAt > 60_000) backoffSeconds = 2
@@ -144,6 +170,12 @@ class ListenService : Service() {
             if (conn.responseCode != 200) throw IOException("Push answered HTTP ${conn.responseCode}")
 
             ListenStatus.markConnected(this)
+            AppLog.info(this, "Connected to push")
+            if (problemShown) {
+                Alerts.clearProblem(this)
+                problemShown = false
+            }
+            disconnectedSince = 0L
             updateNotification("Listening for new mail")
             runCheck(session, token) // catch up on anything missed while disconnected
 
@@ -229,6 +261,7 @@ class ListenService : Service() {
     companion object {
         private const val PING_SECONDS = 60L
         private const val DEBOUNCE_MS = 3_000L
+        private const val LONG_OUTAGE_MS = 15 * 60_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, ListenService::class.java))
@@ -245,9 +278,14 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
         if (action == Intent.ACTION_MY_PACKAGE_REPLACED) Alerts.remindFullScreenIfNeeded(context)
+        // A release alarm can be lost across a reboot: release held alerts if quiet hours are over.
+        if (HeldAlerts.count(context) > 0 && !QuietStore.load(context).isQuiet(java.time.LocalTime.now())) {
+            HeldAlerts.release(context)
+        }
         if ((action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED) &&
             ListenStatus.enabled(context) && TokenStore.hasToken(context)
         ) {
+            AppLog.info(context, if (action == Intent.ACTION_BOOT_COMPLETED) "Restarting after reboot" else "Restarting after update")
             ListenService.start(context)
         }
     }

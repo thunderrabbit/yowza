@@ -43,6 +43,8 @@ data class StoredRule(
     val enabled: Boolean = true,
     val matchAll: Boolean = true,
     val conditions: List<Condition>,
+    /** If false, this rule's alerts wait until quiet hours end. */
+    val wakeDuringQuiet: Boolean = true,
 ) {
     /** Conditions with something in them. A rule with none never matches. */
     val usable: List<Condition> get() = conditions.filter { it.value.isNotBlank() }
@@ -83,6 +85,7 @@ object RuleJson {
                     .put("name", r.name)
                     .put("enabled", r.enabled)
                     .put("match", if (r.matchAll) "all" else "any")
+                    .put("wakeDuringQuiet", r.wakeDuringQuiet)
                     .put(
                         "conditions",
                         JSONArray(r.conditions.map { JSONObject().put("field", it.field.jmap).put("value", it.value) }),
@@ -109,6 +112,7 @@ object RuleJson {
                 name = o.optString("name").ifBlank { "Rule ${i + 1}" },
                 enabled = o.optBoolean("enabled", true),
                 matchAll = o.optString("match", "all") != "any",
+                wakeDuringQuiet = o.optBoolean("wakeDuringQuiet", true),
                 conditions = (0 until conds.length()).map { j ->
                     val c = conds.getJSONObject(j)
                     Condition(Field.fromJmap(c.optString("field")), c.optString("value"))

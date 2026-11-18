@@ -129,6 +129,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
     val scope = rememberCoroutineScope()
     var showConnection by remember { mutableStateOf(false) }
     var showRules by remember { mutableStateOf(false) }
+    var showHealth by remember { mutableStateOf(false) }
     var connection by remember { mutableStateOf<ConnectionState>(ConnectionState.NoToken) }
     var connectTick by remember { mutableIntStateOf(0) }
 
@@ -144,7 +145,9 @@ fun YowzaApp(version: String, refreshKey: Int) {
         connection = withContext(Dispatchers.IO) { Jmap.fetchSession(url, token) }
     }
 
-    if (showRules) {
+    if (showHealth) {
+        HealthScreen(onBack = { showHealth = false })
+    } else if (showRules) {
         RulesScreen(onBack = { showRules = false })
     } else if (showConnection) {
         ConnectionScreen(
@@ -170,6 +173,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
             connection = connection,
             onOpenConnection = { showConnection = true },
             onOpenRules = { showRules = true },
+            onOpenHealth = { showHealth = true },
         )
     }
 }
@@ -181,6 +185,7 @@ fun HomeScreen(
     connection: ConnectionState,
     onOpenConnection: () -> Unit,
     onOpenRules: () -> Unit,
+    onOpenHealth: () -> Unit,
 ) {
     val context = LocalContext.current
     var permissionTick by androidx.compose.runtime.remember { mutableIntStateOf(0) }
@@ -277,13 +282,25 @@ fun HomeScreen(
                 ok = ready.battery,
                 fixLabel = "Allow",
             ) {
-                // Lets the push connection survive Doze. Yowza! sleeps on an idle socket.
+                // Lets the push connection survive Doze. Yowza! mostly sleeps on an idle socket.
                 context.startActivity(
                     Intent(
                         Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                         Uri.parse("package:${context.packageName}"),
                     ),
                 )
+            }
+
+            if (!ready.battery) {
+                Text(
+                    "Battery: Android pauses network for idle apps to save power, which would cut " +
+                        "Yowza!'s connection to your mail and delay alerts. Yowza! mostly waits " +
+                        "quietly on an open connection, so the extra battery use is small.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            OutlinedButton(onClick = onOpenHealth, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Health and log")
             }
 
             Spacer(Modifier.height(24.dp))
