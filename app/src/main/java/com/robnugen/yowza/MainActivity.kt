@@ -128,6 +128,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showConnection by remember { mutableStateOf(false) }
+    var showRules by remember { mutableStateOf(false) }
     var connection by remember { mutableStateOf<ConnectionState>(ConnectionState.NoToken) }
     var connectTick by remember { mutableIntStateOf(0) }
 
@@ -143,7 +144,9 @@ fun YowzaApp(version: String, refreshKey: Int) {
         connection = withContext(Dispatchers.IO) { Jmap.fetchSession(url, token) }
     }
 
-    if (showConnection) {
+    if (showRules) {
+        RulesScreen(onBack = { showRules = false })
+    } else if (showConnection) {
         ConnectionScreen(
             state = connection,
             onSave = { token, url ->
@@ -166,6 +169,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
             refreshKey = refreshKey,
             connection = connection,
             onOpenConnection = { showConnection = true },
+            onOpenRules = { showRules = true },
         )
     }
 }
@@ -176,6 +180,7 @@ fun HomeScreen(
     refreshKey: Int,
     connection: ConnectionState,
     onOpenConnection: () -> Unit,
+    onOpenRules: () -> Unit,
 ) {
     val context = LocalContext.current
     var permissionTick by androidx.compose.runtime.remember { mutableIntStateOf(0) }
@@ -220,7 +225,7 @@ fun HomeScreen(
                 Spacer(Modifier.height(16.dp))
                 ListenSection()
                 Spacer(Modifier.height(16.dp))
-                CheckNowSection(connection.session)
+                CheckNowSection(connection.session, onEditRules = onOpenRules)
             }
 
             Spacer(Modifier.height(24.dp))

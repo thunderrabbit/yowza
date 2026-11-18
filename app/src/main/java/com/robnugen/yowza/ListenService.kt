@@ -244,6 +244,7 @@ class ListenService : Service() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
+        if (action == Intent.ACTION_MY_PACKAGE_REPLACED) Alerts.remindFullScreenIfNeeded(context)
         if ((action == Intent.ACTION_BOOT_COMPLETED || action == Intent.ACTION_MY_PACKAGE_REPLACED) &&
             ListenStatus.enabled(context) && TokenStore.hasToken(context)
         ) {

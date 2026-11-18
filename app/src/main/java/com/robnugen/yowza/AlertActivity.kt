@@ -50,6 +50,7 @@ class AlertActivity : ComponentActivity() {
 
     private var sender by mutableStateOf("")
     private var subject by mutableStateOf("")
+    private var rules by mutableStateOf("")
     private var notificationId = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,6 +93,10 @@ class AlertActivity : ComponentActivity() {
                     color = Color.Black,
                     textAlign = TextAlign.Center,
                 )
+                if (rules.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("Rule: $rules", fontSize = 18.sp, color = Color.Black, textAlign = TextAlign.Center)
+                }
                 Spacer(Modifier.height(48.dp))
                 Button(
                     onClick = { dismissAlert() },
@@ -119,6 +124,7 @@ class AlertActivity : ComponentActivity() {
         sender = intent.getStringExtra(Alerts.EXTRA_SENDER) ?: "Yowza!"
         subject = intent.getStringExtra(Alerts.EXTRA_SUBJECT) ?: ""
         notificationId = intent.getIntExtra(Alerts.EXTRA_NOTIFICATION_ID, 0)
+        rules = intent.getStringExtra(Alerts.EXTRA_RULES).orEmpty()
     }
 
     private fun dismissAlert() {

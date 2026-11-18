@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Back up only the rules: never the mail token, and not the alert
+     window (restoring an old window on a new phone would re-alert on old mail). -->
+<full-backup-content>
+    <include domain="file" path="rules.json" />
+</full-backup-content>

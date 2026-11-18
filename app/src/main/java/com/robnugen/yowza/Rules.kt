@@ -17,52 +17,30 @@
  */
 package com.robnugen.yowza
 
-import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * A named JMAP Email/query filter (RFC 8621 §4.4.1). The mail server does the matching.
- * Hardcoded for now (step 4.5); step 7 makes rules editable data.
- */
+/** A ready-to-query rule: a name and its JMAP Email/query filter (RFC 8621 §4.4.1). */
 data class Rule(val name: String, val description: String, val filter: JSONObject)
 
-private fun cond(key: String, value: String) = JSONObject().put(key, value)
-
-private fun anyOf(vararg c: JSONObject) =
-    JSONObject().put("operator", "OR").put("conditions", JSONArray(c.toList()))
-
-private fun allOf(vararg c: JSONObject) =
-    JSONObject().put("operator", "AND").put("conditions", JSONArray(c.toList()))
-
 object Rules {
-    val hardcoded: List<Rule> = listOf(
-        Rule(
-            name = "Client",
-            description = "from client@example.com",
-            filter = cond("from", "client@example.com"),
-        ),
-        Rule(
-            name = "Colleague",
-            description = "from colleague@example.com",
-            filter = cond("from", "colleague@example.com"),
-        ),
-        Rule(
-            name = "Teammate",
-            description = "from teammate@example.com",
-            filter = cond("from", "teammate@example.com"),
-        ),
-        Rule(
-            name = "ExampleCo",
-            description = "from example.org, or JobBoard mail mentioning ExampleCo",
-            filter = anyOf(
-                cond("from", "example.org"),
-                allOf(cond("from", "jobs.example.net"), cond("text", "ExampleCo")),
+    /**
+     * The rules that were hardcoded up to v0.1.14. Written into rule storage once, the first
+     * time this version runs, so they become ordinary editable rules. The old ExampleCo
+     * rule (A or (B and C)) is split into two rules, since a rule is one AND or one OR.
+     */
+    val seeds: List<StoredRule> = listOf(
+        StoredRule(name = "Client", conditions = listOf(Condition(Field.FROM, "client@example.com"))),
+        StoredRule(name = "Colleague", conditions = listOf(Condition(Field.FROM, "colleague@example.com"))),
+        StoredRule(name = "Teammate", conditions = listOf(Condition(Field.FROM, "teammate@example.com"))),
+        StoredRule(name = "ExampleCo", conditions = listOf(Condition(Field.FROM, "example.org"))),
+        StoredRule(
+            name = "ExampleCo (JobBoard)",
+            matchAll = true,
+            conditions = listOf(
+                Condition(Field.FROM, "jobs.example.net"),
+                Condition(Field.TEXT, "ExampleCo"),
             ),
         ),
-        Rule(
-            name = "PHP error",
-            description = "subject contains \"PHP ERROR in\"",
-            filter = cond("subject", "PHP ERROR in"),
-        ),
+        StoredRule(name = "PHP error", conditions = listOf(Condition(Field.SUBJECT, "PHP ERROR in"))),
     )
 }

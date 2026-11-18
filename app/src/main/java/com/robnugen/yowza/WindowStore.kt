@@ -157,7 +157,7 @@ object Checker {
         val overlap = WindowStore.overlap(context)
         val start = window.windowStart(overlap)
         ListenStatus.markQuery(context)
-        when (val r = Jmap.queryRules(session, token, Rules.hardcoded, limitPerRule = 25, after = start)) {
+        when (val r = Jmap.queryRules(session, token, RuleStore.queryRules(context), limitPerRule = 25, after = start)) {
             is QueryResult.Failed -> CheckOutcome(emptyList(), start, r.message)
             is QueryResult.Found -> {
                 val decision = window.process(r.emails, overlap)
@@ -170,7 +170,8 @@ object Checker {
                     val loud = decision.toAlert.filter { Cooldown.keyFor(it) in cd.loudKeys }
                     if (loud.isNotEmpty()) {
                         val (sender, subject) = summarizeForAlert(loud)
-                        Alerts.showNew(context, sender, subject) // alert first…
+                        val ruleNames = loud.flatMap { it.matchedRules }.distinct()
+                        Alerts.showNew(context, sender, subject, ruleNames) // alert first…
                     }
                     if (cd.muted.isNotEmpty()) {
                         Alerts.showMutedRepeats(context, cd.muted)

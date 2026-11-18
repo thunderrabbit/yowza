@@ -50,13 +50,13 @@ import kotlinx.coroutines.withContext
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Step 5: Check now alerts only on new matches. "Recent matches" is the old browse view. */
+/** Check now alerts only on new matches. "Recent matches" is the browse-and-test view. */
 private const val ALERT_DELAY_SECONDS = 10
 
 private val timeFormat = DateTimeFormatter.ofPattern("EEE d MMM, HH:mm")
 
 @Composable
-fun CheckNowSection(session: JmapSession) {
+fun CheckNowSection(session: JmapSession, onEditRules: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -116,16 +116,18 @@ fun CheckNowSection(session: JmapSession) {
             }) { Text("+") }
         }
 
+        val rules = remember { RuleStore.load(context) }
         Text(
-            "Rules (fixed for now; editable in a later version):",
+            "Rules: ${rules.count { it.enabled }} on" +
+                (if (rules.any { !it.enabled }) ", ${rules.count { !it.enabled }} off" else ""),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 4.dp),
         )
-        Rules.hardcoded.forEach { rule ->
-            Text(
-                "• ${rule.name}: ${rule.description}",
-                style = MaterialTheme.typography.bodySmall,
-            )
+        rules.filter { it.enabled }.forEach { rule ->
+            Text("• ${rule.name}: ${rule.describe()}", style = MaterialTheme.typography.bodySmall)
+        }
+        OutlinedButton(onClick = onEditRules, modifier = Modifier.padding(top = 6.dp)) {
+            Text("Edit rules")
         }
 
         Spacer(Modifier.height(12.dp))
@@ -138,7 +140,7 @@ fun CheckNowSection(session: JmapSession) {
                         if (token == null) {
                             QueryResult.Failed("No token saved.")
                         } else {
-                            Jmap.queryRules(session, token, Rules.hardcoded)
+                            Jmap.queryRules(session, token, RuleStore.queryRules(context))
                         }
                     }
                     busy = false

@@ -41,6 +41,7 @@ object Alerts {
     const val EXTRA_SENDER = "sender"
     const val EXTRA_SUBJECT = "subject"
     const val EXTRA_NOTIFICATION_ID = "notification_id"
+    const val EXTRA_RULES = "rules"
 
     private const val TEST_NOTIFICATION_ID_BASE = 1_000_000
     private const val REAL_NOTIFICATION_ID_BASE = 2_000_000
@@ -74,7 +75,13 @@ object Alerts {
     }
 
     /** Post an alert. Shows full screen when the phone is locked or idle. */
-    fun show(context: Context, sender: String, subject: String, notificationId: Int) {
+    fun show(
+        context: Context,
+        sender: String,
+        subject: String,
+        notificationId: Int,
+        rules: List<String> = emptyList(),
+    ) {
         ensureChannel(context)
         if (!canPostNotifications(context)) return
 
@@ -83,6 +90,7 @@ object Alerts {
             putExtra(EXTRA_SENDER, sender)
             putExtra(EXTRA_SUBJECT, subject)
             putExtra(EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(EXTRA_RULES, rules.joinToString(" · "))
         }
         val fullScreen = PendingIntent.getActivity(
             context,
@@ -95,6 +103,7 @@ object Alerts {
             .setSmallIcon(R.drawable.ic_stat_yowza)
             .setContentTitle(sender)
             .setContentText(subject)
+            .setSubText(rules.joinToString(" · ").ifEmpty { null })
             .setCategory(Notification.CATEGORY_ALARM)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setFullScreenIntent(fullScreen, true)
@@ -133,6 +142,7 @@ object Alerts {
     private const val REPEATS_CHANNEL_ID = "yowza_repeats_v1"
     private const val REPEATS_NOTIFICATION_ID = 3_000_000
     const val LISTEN_NOTIFICATION_ID = 3_000_001
+    private const val FULLSCREEN_REMINDER_ID = 3_000_002
 
     /** Quiet channels: the persistent "listening" notice and the muted-repeats summary. */
     fun ensureQuietChannels(context: Context) {
@@ -178,9 +188,36 @@ object Alerts {
     }
 
     /** A real alert for new mail. Always a fresh notification id, so it goes full screen. */
-    fun showNew(context: Context, sender: String, subject: String) {
+    fun showNew(context: Context, sender: String, subject: String, rules: List<String> = emptyList()) {
         val id = REAL_NOTIFICATION_ID_BASE + (System.currentTimeMillis() / 1000 % 100_000).toInt()
-        show(context, sender, subject, id)
+        show(context, sender, subject, id, rules)
+    }
+
+    /**
+     * Android resets the full-screen permission when a sideloaded app is updated, and apps
+     * can't grant it back themselves. After an update, nudge the user to switch it on again.
+     */
+    fun remindFullScreenIfNeeded(context: Context) {
+        if (canUseFullScreen(context) || !canPostNotifications(context)) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        ensureQuietChannels(context)
+        val settings = PendingIntent.getActivity(
+            context,
+            FULLSCREEN_REMINDER_ID,
+            Intent(
+                android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                android.net.Uri.parse("package:${context.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = Notification.Builder(context, REPEATS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_yowza)
+            .setContentTitle("Yowza! updated: re-allow full-screen alerts")
+            .setContentText("Android switched it off during the update. Tap to switch it back on.")
+            .setContentIntent(settings)
+            .setAutoCancel(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(FULLSCREEN_REMINDER_ID, n)
     }
 
     /**
