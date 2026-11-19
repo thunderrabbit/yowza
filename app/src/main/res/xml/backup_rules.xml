@@ -3,4 +3,5 @@
      window (restoring an old window on a new phone would re-alert on old mail). -->
 <full-backup-content>
     <include domain="file" path="rules.json" />
+    <include domain="file" path="alarms.json" />
 </full-backup-content>

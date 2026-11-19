@@ -305,6 +305,8 @@ class ListenService : Service() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
+        // Boot clears scheduled alarms; an update may too. Put time-zone alarms back.
+        AlarmScheduler.rescheduleAll(context)
         if (action == Intent.ACTION_MY_PACKAGE_REPLACED) Alerts.remindFullScreenIfNeeded(context)
         // A release alarm can be lost across a reboot: release held alerts if quiet hours are over.
         if (HeldAlerts.count(context) > 0 && !QuietStore.load(context).isQuiet(java.time.LocalTime.now())) {
