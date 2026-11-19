@@ -12,6 +12,8 @@ This folder is licensed under the **GNU Affero General Public License v3** (see
 [LICENSE](LICENSE)). The Android app in the rest of the repository is GPLv3. Every response
 from the inbox includes a link to this source code.
 
+Requires PHP 8.1+ with PDO MySQL, and MySQL 5.7+ or MariaDB 10.3+.
+
 ## Files
 
 | File | What it does |
