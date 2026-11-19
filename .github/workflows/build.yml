@@ -3,9 +3,11 @@ name: Build APK
 on:
   push:
     branches: [main]
-    # The server inbox doesn't affect the app; don't build a release for server-only changes.
+    # The server inbox and docs don't affect the app; don't build a release for them alone.
     paths-ignore:
       - "server/**"
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:

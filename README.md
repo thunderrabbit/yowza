@@ -4,21 +4,23 @@
 
 Yowza! is an Android app that stays quiet until something matters, then takes over the screen with a big alarm-style alert that gets through Do Not Disturb. 😱🙀🤯
 
-> Status: early skeleton (step 1 of the build plan). It installs and opens to a home screen; alerts aren't wired up yet.
+## What it does
 
-## What it will do
-
-- **Email alerts via JMAP** (e.g. Fastmail). You write rules on sender, recipient, subject or text, the mail server does the matching, and Yowza! fires a full-screen alert for new matches. Read-only token; only sender and subject are ever shown.
-- **Alerts from your own scripts.** A tiny self-hostable PHP + MySQL inbox the phone polls with an API key. Works on cheap shared hosting: no daemon, no Firebase, no ntfy. Repeated alerts (like a PHP error storm) collapse into one "×N" alert.
-- **Time-zone-pinned alarms.** "9:00 Tokyo time" fires at the right moment wherever you are.
+- **Email alerts via JMAP** (e.g. Fastmail). You write rules on sender, recipient, subject or text, the mail server does the matching, and Yowza! raises a full-screen alert within seconds of a match arriving. Read-only token; only sender, subject and time are ever fetched.
+- **Alerts from your own scripts.** A tiny self-hosted PHP + MySQL [server inbox](server/README.md) that your scripts post to and the phone polls. Runs on cheap shared hosting: no daemon, no Firebase, no ntfy.
+- **No alert storms.** Identical alerts collapse into one "×N" alert, and repeats within 30 minutes are muted.
+- **Quiet hours** per rule: some rules can wake you, the rest wait until morning.
+- **Visible failures.** A health screen and log, and a notification if Yowza! can't reach your mail.
+- **Coming:** time-zone-pinned alarms ("9:00 Tokyo time", wherever you are).
 
 No Google Play Services or Firebase.
 
 ## Install
 
-Download **[yowza.apk](https://github.com/thunderrabbit/yowza/releases/latest/download/yowza.apk)** on your phone and open it. The first time, Android will ask you to allow installs from your browser.
+- **The app:** download **[yowza.apk](https://github.com/thunderrabbit/yowza/releases/latest/download/yowza.apk)** on your phone and open it. Full setup (permissions, mail token, rules, listening): **[docs/INSTALL-APP.md](docs/INSTALL-APP.md)**.
+- **The server inbox** (optional, for alerts from your own scripts): **[server/README.md](server/README.md)**.
 
-Every push to `main` builds a new release via GitHub Actions.
+Every push to `main` builds a new app release via GitHub Actions.
 
 ## Build it yourself
 
@@ -33,4 +35,4 @@ Release builds are signed when these environment variables are set: `YOWZA_KEYST
 
 ## License
 
-Yowza! is free software under the [GNU General Public License v3](LICENSE) or later. The server-side inbox, when added, will be under the GNU AGPL v3.
+The app is free software under the [GNU General Public License v3](LICENSE) or later. The server inbox in [`server/`](server/) is under the [GNU Affero General Public License v3](server/LICENSE).

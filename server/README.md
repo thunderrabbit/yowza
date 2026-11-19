@@ -46,7 +46,10 @@ Requires PHP 8.1+ with PDO MySQL, and MySQL 5.7+ or MariaDB 10.3+.
    `config.php` stores only hashes. Keep the printed keys somewhere safe (e.g. a password
    manager); they can't be recovered, only replaced.
 6. **In the app:** Server inbox → enter the full URL of `alerts.php`
-   (e.g. `https://example.com/pager/alerts.php`) and the read key.
+   (e.g. `https://example.com/pager/alerts.php`) and the read key, then **Save and connect**.
+   App setup is in [docs/INSTALL-APP.md](../docs/INSTALL-APP.md).
+7. **Test it** with the `curl` example below. The phone should alert within a few minutes
+   (sooner if you tap **Check now**).
 
 ## Sending an alert
 
