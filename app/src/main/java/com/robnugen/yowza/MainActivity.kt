@@ -131,7 +131,6 @@ fun YowzaApp(version: String, refreshKey: Int) {
     var showRules by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
     var showInbox by remember { mutableStateOf(false) }
-    var showAlarms by remember { mutableStateOf(false) }
     var connection by remember { mutableStateOf<ConnectionState>(ConnectionState.NoToken) }
     var connectTick by remember { mutableIntStateOf(0) }
 
@@ -147,9 +146,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
         connection = withContext(Dispatchers.IO) { Jmap.fetchSession(url, token) }
     }
 
-    if (showAlarms) {
-        AlarmsScreen(onBack = { showAlarms = false })
-    } else if (showInbox) {
+    if (showInbox) {
         InboxScreen(onBack = { showInbox = false })
     } else if (showHealth) {
         HealthScreen(onBack = { showHealth = false })
@@ -181,7 +178,6 @@ fun YowzaApp(version: String, refreshKey: Int) {
             onOpenRules = { showRules = true },
             onOpenHealth = { showHealth = true },
             onOpenInbox = { showInbox = true },
-            onOpenAlarms = { showAlarms = true },
         )
     }
 }
@@ -195,7 +191,6 @@ fun HomeScreen(
     onOpenRules: () -> Unit,
     onOpenHealth: () -> Unit,
     onOpenInbox: () -> Unit,
-    onOpenAlarms: () -> Unit,
 ) {
     val context = LocalContext.current
     var permissionTick by androidx.compose.runtime.remember { mutableIntStateOf(0) }
@@ -235,16 +230,6 @@ fun HomeScreen(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onOpenConnection) {
                 Text(if (connection is ConnectionState.NoToken) "Connect mail" else "Mail connection")
-            }
-            OutlinedButton(onClick = onOpenAlarms) {
-                val next = androidx.compose.runtime.remember(refreshKey) {
-                    AlarmScheduler.nextOf(AlarmStore.load(context))
-                }
-                Text(
-                    "Time-zone alarms" + (next?.let { (a, at) ->
-                        " · next " + ZonedAlarm.describeHere(at, java.time.ZoneId.systemDefault(), java.time.Instant.now())
-                    } ?: ""),
-                )
             }
             OutlinedButton(onClick = onOpenInbox) {
                 Text("Server inbox" + if (InboxStore.isConfigured(LocalContext.current)) " ✅" else "")

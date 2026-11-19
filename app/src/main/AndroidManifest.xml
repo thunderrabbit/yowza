@@ -61,20 +61,6 @@
             android:exported="false" />
 
         <receiver
-            android:name=".ZonedAlarmReceiver"
-            android:exported="false" />
-
-        <!-- Time-zone and clock changes are exempt from Android's implicit-broadcast limits. -->
-        <receiver
-            android:name=".TimeChangeReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.intent.action.TIME_SET" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
             android:name=".BootReceiver"
             android:exported="true">
             <intent-filter>

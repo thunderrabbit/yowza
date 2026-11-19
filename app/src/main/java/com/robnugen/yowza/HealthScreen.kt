@@ -81,10 +81,6 @@ fun HealthScreen(onBack: () -> Unit) {
         "Inbox last fetch" to show(InboxStore.lastFetch(context)),
         "Inbox last error" to (InboxStore.lastError(context) ?: "—"),
         "Inbox cursor" to (InboxStore.cursor(context)?.toString() ?: "—"),
-        "Time-zone alarms on" to AlarmStore.load(context).count { it.enabled }.toString(),
-        "Next time-zone alarm" to (AlarmScheduler.nextOf(AlarmStore.load(context))?.let { (a, at) ->
-            "${a.describeTime()} (${show(at)} here)"
-        } ?: "—"),
         "Rules on" to RuleStore.load(context).count { it.enabled }.toString(),
         "Full-screen allowed" to if (Alerts.canUseFullScreen(context)) "yes" else "NO",
         "Unrestricted battery" to if (Alerts.ignoresBatteryOptimizations(context)) "yes" else "NO",
