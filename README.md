@@ -11,7 +11,7 @@ Yowza! is an Android app that stays quiet until something matters, then takes ov
 - **No alert storms.** Identical alerts collapse into one "×N" alert, and repeats within 30 minutes are muted.
 - **Quiet hours** per rule: some rules can wake you, the rest wait until morning.
 - **Visible failures.** A health screen and log, and a notification if Yowza! can't reach your mail.
-- **Coming:** time-zone-pinned alarms ("9:00 Tokyo time", wherever you are).
+- **Time-zone alarms:** "09:00 Tokyo time" rings at the right moment wherever you are.
 
 No Google Play Services or Firebase.
 

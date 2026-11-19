@@ -75,6 +75,11 @@ without alerting, and tapping one tests its alert.
   connect**.
 - **Quiet hours** (in **Edit rules**): pick a nightly window. Rules with *Can wake me during
   quiet hours* switched off wait, and their alerts go off together when quiet hours end.
+- **Time-zone alarms:** an alarm pinned to a city's clock, e.g. "09:00 Asia/Tokyo",
+  rings at that real moment wherever you are, and keeps working when you travel or the
+  phone changes time zone. Set a label, time, zone and repeat days; the list shows each
+  alarm's next ring in your local time. They ring with the same full-screen alert and
+  ignore quiet hours.
 - **Repeats:** after an alert, identical copies (same sender and subject) for 30 minutes
   don't ring again; a silent "Repeats muted" notification counts them.
 
