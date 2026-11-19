@@ -130,6 +130,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
     var showConnection by remember { mutableStateOf(false) }
     var showRules by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
+    var showInbox by remember { mutableStateOf(false) }
     var connection by remember { mutableStateOf<ConnectionState>(ConnectionState.NoToken) }
     var connectTick by remember { mutableIntStateOf(0) }
 
@@ -145,7 +146,9 @@ fun YowzaApp(version: String, refreshKey: Int) {
         connection = withContext(Dispatchers.IO) { Jmap.fetchSession(url, token) }
     }
 
-    if (showHealth) {
+    if (showInbox) {
+        InboxScreen(onBack = { showInbox = false })
+    } else if (showHealth) {
         HealthScreen(onBack = { showHealth = false })
     } else if (showRules) {
         RulesScreen(onBack = { showRules = false })
@@ -174,6 +177,7 @@ fun YowzaApp(version: String, refreshKey: Int) {
             onOpenConnection = { showConnection = true },
             onOpenRules = { showRules = true },
             onOpenHealth = { showHealth = true },
+            onOpenInbox = { showInbox = true },
         )
     }
 }
@@ -186,6 +190,7 @@ fun HomeScreen(
     onOpenConnection: () -> Unit,
     onOpenRules: () -> Unit,
     onOpenHealth: () -> Unit,
+    onOpenInbox: () -> Unit,
 ) {
     val context = LocalContext.current
     var permissionTick by androidx.compose.runtime.remember { mutableIntStateOf(0) }
@@ -225,6 +230,9 @@ fun HomeScreen(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onOpenConnection) {
                 Text(if (connection is ConnectionState.NoToken) "Connect mail" else "Mail connection")
+            }
+            OutlinedButton(onClick = onOpenInbox) {
+                Text("Server inbox" + if (InboxStore.isConfigured(LocalContext.current)) " ✅" else "")
             }
             if (connection is ConnectionState.Connected) {
                 Spacer(Modifier.height(16.dp))
