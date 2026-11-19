@@ -74,7 +74,9 @@ fun CheckNowSection(session: JmapSession, onEditRules: () -> Unit) {
                         if (token == null) {
                             CheckOutcome(emptyList(), java.time.Instant.now(), "No token saved.")
                         } else {
-                            Checker.checkNow(context, session, token)
+                            Checker.checkNow(context, session, token).also {
+                                InboxPoller.pollOnce(context) // also check the server inbox
+                            }
                         }
                     }
                     busy = false

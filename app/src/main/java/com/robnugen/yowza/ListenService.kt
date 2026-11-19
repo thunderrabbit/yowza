@@ -51,6 +51,7 @@ class ListenService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
+    private var inboxLoop: Job? = null
     private var debounce: Job? = null
     @Volatile private var connection: HttpURLConnection? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -108,6 +109,7 @@ class ListenService : Service() {
             return START_NOT_STICKY
         }
         if (loop?.isActive != true) loop = scope.launch { runLoop() }
+        if (inboxLoop?.isActive != true) inboxLoop = scope.launch { runInboxLoop() }
         return START_STICKY
     }
 
@@ -143,6 +145,29 @@ class ListenService : Service() {
             backoffSeconds = (backoffSeconds * 2).coerceAtMost(300)
         }
         stopSelf()
+    }
+
+    /**
+     * Polls the server inbox every few minutes. The phone may doze between polls; the mail
+     * connection's pings (every 60 s) also trigger a due poll, see [maybePollInbox].
+     */
+    private suspend fun runInboxLoop() {
+        while (scope.isActive && ListenStatus.enabled(this)) {
+            maybePollInbox()
+            delay(InboxPoller.INTERVAL_MS)
+        }
+    }
+
+    private fun maybePollInbox() {
+        if (!InboxStore.isConfigured(this) || !InboxPoller.isDue(this)) return
+        val pm = getSystemService(PowerManager::class.java)
+        val wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "yowza:inbox")
+        wake.acquire(30_000)
+        try {
+            InboxPoller.pollOnce(this)
+        } finally {
+            if (wake.isHeld) wake.release()
+        }
     }
 
     /** One connection: fetch session, catch up, then read events until it drops. */
@@ -188,6 +213,9 @@ class ListenService : Service() {
                             if (event == "state") {
                                 ListenStatus.markPush(this)
                                 scheduleCheck(session, token)
+                            } else if (event == "ping") {
+                                // The server's ping just woke us; poll the inbox if it's due.
+                                scope.launch { maybePollInbox() }
                             }
                             event = ""
                         }

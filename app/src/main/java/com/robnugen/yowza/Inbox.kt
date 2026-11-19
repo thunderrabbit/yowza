@@ -168,3 +168,88 @@ object InboxStore {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }
+
+/** Result of one inbox poll, for the home screen and log. */
+data class InboxOutcome(val delivered: Delivery?, val error: String?, val started: Boolean = false)
+
+object InboxPoller {
+    private val lock = Any()
+    const val INTERVAL_MS = 3 * 60_000L
+
+    /** Due if the last poll was at least [INTERVAL_MS] ago. */
+    fun isDue(context: Context): Boolean {
+        val last = InboxStore.lastFetch(context) ?: return true
+        return System.currentTimeMillis() - last.toEpochMilli() >= INTERVAL_MS
+    }
+
+    /**
+     * Fetch new server alerts and deliver them like email alerts: alert first, then save the
+     * cursor (a crash repeats an alert, never misses one). Blocking: call off the main thread.
+     */
+    fun pollOnce(context: Context): InboxOutcome = synchronized(lock) {
+        if (!InboxStore.isConfigured(context)) return@synchronized InboxOutcome(null, null)
+        val url = InboxStore.url(context)
+        val key = InboxStore.key(context) ?: return@synchronized InboxOutcome(null, "Inbox key unreadable; enter it again.")
+        var cursor = InboxStore.cursor(context)
+
+        if (cursor == null) {
+            // First poll for this address/key: take the current cursor, deliver nothing old.
+            return@synchronized when (val r = InboxClient.fetch(url, key, null)) {
+                is InboxResult.Ok -> {
+                    InboxStore.setCursor(context, r.cursor)
+                    InboxStore.markFetch(context, null)
+                    AppLog.info(context, "Inbox connected, starting at ${r.cursor}")
+                    InboxOutcome(null, null, started = true)
+                }
+                is InboxResult.Failed -> fail(context, r)
+            }
+        }
+
+        val all = mutableListOf<InboxAlert>()
+        var pages = 0
+        while (true) {
+            when (val r = InboxClient.fetch(url, key, cursor)) {
+                is InboxResult.Failed -> return@synchronized fail(context, r)
+                is InboxResult.Ok -> {
+                    all += r.alerts
+                    cursor = r.cursor
+                    if (!r.more || ++pages >= 5) break
+                }
+            }
+        }
+
+        val canWake = InboxStore.canWake(context)
+        val quiet = QuietStore.load(context)
+        val nowLocal = java.time.LocalTime.now()
+        // Keep only each alert's newest state (a count may have grown twice since last poll).
+        val newest = all.groupBy { it.id }.values.map { v -> v.maxBy { it.seq } }
+        val d = if (newest.isEmpty()) null else {
+            val byId = newest.associateBy { "inbox:${it.id}:${it.count}" }
+            Checker.deliver(context, newest.map { it.toSummary() }) { s ->
+                canWake || byId[s.id]?.high == true || !quiet.isQuiet(nowLocal)
+            }
+        }
+        InboxStore.setCursor(context, cursor!!) // …then record
+        InboxStore.markFetch(context, null)
+        Alerts.clearInboxProblem(context)
+        if (d != null) {
+            AppLog.info(
+                context,
+                "Inbox: ${newest.size} new → ${d.loud.size} alerted" +
+                    (if (d.muted > 0) ", ${d.muted} muted repeats" else "") +
+                    (if (d.held.isNotEmpty()) ", ${d.held.size} held for quiet hours" else "") +
+                    " (sources: ${newest.map { it.source }.distinct().joinToString()})",
+            )
+        }
+        InboxOutcome(d, null)
+    }
+
+    private fun fail(context: Context, r: InboxResult.Failed): InboxOutcome {
+        InboxStore.markFetch(context, r.message)
+        AppLog.error(context, "Inbox: ${r.message}")
+        if (r.unauthorized) {
+            Alerts.showInboxProblem(context, "Yowza! can't log in to your server inbox", "${r.message} Enter the read key again in Server inbox.")
+        }
+        return InboxOutcome(null, r.message)
+    }
+}

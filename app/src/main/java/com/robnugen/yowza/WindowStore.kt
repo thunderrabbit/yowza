@@ -145,8 +145,33 @@ data class CheckOutcome(
     val held: Int = 0,
 )
 
+/** What happened to a batch of new items. */
+data class Delivery(val loud: List<EmailSummary>, val muted: Int, val held: List<EmailSummary>)
+
 object Checker {
     private val lock = Any()
+
+    /**
+     * The shared alert path for email and server-inbox items: hold what may not wake you
+     * (quiet hours), mute identical repeats in cooldown, and raise one alert for the rest.
+     */
+    fun deliver(context: Context, items: List<EmailSummary>, alertNow: (EmailSummary) -> Boolean): Delivery {
+        val (now, later) = items.partition(alertNow)
+        if (later.isNotEmpty()) HeldAlerts.hold(context, later)
+        if (now.isEmpty()) return Delivery(emptyList(), 0, later)
+        val groups = collapseRepeats(now).map { (e, n) ->
+            Cooldown.Group(Cooldown.keyFor(e), Cooldown.labelFor(e), n)
+        }
+        val cd = CooldownStore.load(context).apply(groups, Instant.now(), Cooldown.DEFAULT_WINDOW)
+        val loud = now.filter { Cooldown.keyFor(it) in cd.loudKeys }
+        if (loud.isNotEmpty()) {
+            val (sender, subject) = summarizeForAlert(loud)
+            Alerts.showNew(context, sender, subject, loud.flatMap { it.matchedRules }.distinct())
+        }
+        if (cd.muted.isNotEmpty()) Alerts.showMutedRepeats(context, cd.muted)
+        CooldownStore.save(context, cd.next)
+        return Delivery(loud, now.size - loud.size, later)
+    }
 
     /**
      * Run all rules over the window, alert on anything new, then record it.
@@ -177,28 +202,10 @@ object Checker {
                 val quiet = QuietStore.load(context)
                 val wakers = stored.filter { it.wakeDuringQuiet }.map { it.name }.toSet()
                 val nowLocal = java.time.LocalTime.now()
-                val (now, later) = decision.toAlert.partition { shouldAlertNow(it.matchedRules, wakers, quiet, nowLocal) }
-                if (later.isNotEmpty()) HeldAlerts.hold(context, later)
-
-                var loud = emptyList<EmailSummary>()
-                var muted = 0
-                if (now.isNotEmpty()) {
-                    val groups = collapseRepeats(now).map { (e, n) ->
-                        Cooldown.Group(Cooldown.keyFor(e), Cooldown.labelFor(e), n)
-                    }
-                    val cd = CooldownStore.load(context).apply(groups, Instant.now(), Cooldown.DEFAULT_WINDOW)
-                    loud = now.filter { Cooldown.keyFor(it) in cd.loudKeys }
-                    if (loud.isNotEmpty()) {
-                        val (sender, subject) = summarizeForAlert(loud)
-                        val ruleNames = loud.flatMap { it.matchedRules }.distinct()
-                        Alerts.showNew(context, sender, subject, ruleNames) // alert first…
-                    }
-                    if (cd.muted.isNotEmpty()) {
-                        Alerts.showMutedRepeats(context, cd.muted)
-                        muted = now.size - loud.size
-                    }
-                    CooldownStore.save(context, cd.next)
-                }
+                val d = deliver(context, decision.toAlert) { shouldAlertNow(it.matchedRules, wakers, quiet, nowLocal) }
+                val loud = d.loud
+                val muted = d.muted
+                val later = d.held
                 WindowStore.save(context, decision.nextState) // …then record
                 AppLog.info(
                     context,

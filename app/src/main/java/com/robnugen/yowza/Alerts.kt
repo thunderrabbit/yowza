@@ -170,7 +170,7 @@ object Alerts {
     private const val HELD_NOTIFICATION_ID = 3_000_004
 
     /** A normal (not full-screen) notification when Yowza! can't do its job. */
-    fun showProblem(context: Context, title: String, text: String) {
+    fun showProblem(context: Context, title: String, text: String, id: Int = PROBLEM_NOTIFICATION_ID) {
         if (!canPostNotifications(context)) return
         val nm = context.getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(PROBLEMS_CHANNEL_ID) == null) {
@@ -182,7 +182,7 @@ object Alerts {
         }
         val open = PendingIntent.getActivity(
             context,
-            PROBLEM_NOTIFICATION_ID,
+            id,
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -194,7 +194,18 @@ object Alerts {
             .setOnlyAlertOnce(true)
             .setContentIntent(open)
             .build()
-        nm.notify(PROBLEM_NOTIFICATION_ID, n)
+        nm.notify(id, n)
+    }
+
+    private const val INBOX_PROBLEM_ID = 3_000_005
+
+    /** Like [showProblem], but for the server inbox, so the two can clear independently. */
+    fun showInboxProblem(context: Context, title: String, text: String) {
+        showProblem(context, title, text, INBOX_PROBLEM_ID)
+    }
+
+    fun clearInboxProblem(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(INBOX_PROBLEM_ID)
     }
 
     fun clearProblem(context: Context) {
