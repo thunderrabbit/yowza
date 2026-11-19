@@ -48,6 +48,8 @@ data class EmailSummary(
     val subject: String,
     val receivedAt: Instant?,
     val matchedRules: List<String> = emptyList(),
+    /** How many identical events this one stands for (server inbox alerts collapse on the server). */
+    val repeat: Int = 1,
 ) {
     val sender: String get() = fromName.ifBlank { fromEmail }.ifBlank { "(unknown sender)" }
 

@@ -79,6 +79,24 @@ object TokenStore {
         prefs(context).edit().remove(PREF_TOKEN).remove(PREF_IV).apply()
     }
 
+    /** Encrypt any secret with the same Keystore key. Returns base64 "iv:ciphertext". */
+    fun seal(plain: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val ct = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" + Base64.encodeToString(ct, Base64.NO_WRAP)
+    }
+
+    /** Reverse of [seal], or null if it can't be decrypted (e.g. the key was wiped). */
+    fun unseal(sealed: String): String? = try {
+        val (iv, ct) = sealed.split(":", limit = 2)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
+        String(cipher.doFinal(Base64.decode(ct, Base64.NO_WRAP)), Charsets.UTF_8)
+    } catch (e: Exception) {
+        null
+    }
+
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

@@ -91,4 +91,4 @@ fun summarizeForAlert(emails: List<EmailSummary>): Pair<String, String> {
  * and how many emails it stands for.
  */
 fun collapseRepeats(emails: List<EmailSummary>): List<Pair<EmailSummary, Int>> =
-    emails.groupBy { it.displaySender to it.subject }.values.map { it.first() to it.size }
+    emails.groupBy { it.displaySender to it.subject }.values.map { it.first() to it.sumOf { e -> e.repeat } }
