@@ -1,0 +1,13 @@
+# Yowza! alert inbox — only alerts.php is reachable from the web.
+# config.php (database password, key hashes), lib.php and the command-line scripts are not.
+# SPDX-License-Identifier: AGPL-3.0-only
+
+Options -Indexes
+
+<FilesMatch "^(?!alerts\.php$).*$">
+    Require all denied
+</FilesMatch>
+
+# Some hosts (PHP via CGI/FastCGI, e.g. DreamHost) drop the Authorization header before
+# PHP sees it. Pass it through. Clients can also send X-Yowza-Key instead.
+SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
